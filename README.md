@@ -4,6 +4,7 @@ Rootmotion for Blender. Transfer movement from feet to root bone and then from r
 Feet to Root:
 
 ![](rootmotion1.gif)
+
 Root to Object:
 
 ![](rootmotion2.gif)
