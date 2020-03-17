@@ -2,8 +2,10 @@
 Rootmotion for Blender. Transfer movement from feet to root bone and then from root bone to the object itself! Works with FBX exporter.
 
 Feet to Root:
+
 ![](rootmotion1.gif)
 Root to Object:
+
 ![](rootmotion2.gif)
 
 
