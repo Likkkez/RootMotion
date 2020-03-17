@@ -10,7 +10,7 @@ Rootmotion for Blender. Transfer movement from feet to root bone and then from r
 ![](rootmotion2.gif)
 
 
-## Steps to RootMotion make work for Game Engines:
+## Steps to make RootMotion work for Game Engines:
 1. Be in Pose mode.
 2. Select Character's feet (as many as you like).
 3. Press 'RootMotion' button.
