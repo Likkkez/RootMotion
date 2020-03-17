@@ -1,5 +1,5 @@
 # RootMotion
-Rootmotion for Blender. Transfer movement from feet to root bone and then from root bone to the object itself! Works with FBX exporter.
+Rootmotion for Blender. Transfer movement from feet to root bone and then from root bone to the object itself! Works with NLA Layers and FBX exporter.
 
 ## Feet to Root:
 
