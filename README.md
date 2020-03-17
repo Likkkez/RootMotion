@@ -19,7 +19,7 @@ Rootmotion for Blender. Transfer movement from feet to root bone and then from r
 
 ## Known Limitation
 If you have a setup where the bones have a ChildOf/Armature constraint that switches between which bone it follows (knee/elb IK or View target bones might have it), you need to make a separate parent that contains those constraints and animate the child instead. This only applies to bones that dont have a parent and were parented through constraints. 
-If you added a child of constraint to a bone that actually had a parent you dont need to worry about anything.
+If you added a ChildOf constraint to a bone that actually had a parent you dont need to worry about anything.
 
 ## Installation
 1. Unzip archive.
