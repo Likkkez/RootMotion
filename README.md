@@ -9,6 +9,15 @@ Rootmotion for Blender. Transfer movement from feet to root bone and then from r
 
 ![](rootmotion2.gif)
 
+## Unroot
+Select the root bone, then run Unroot to transfer motion from root bone to its children.
+
+## Unslide
+Select the sliding bone and click "Unslide" to move the root bone in the opposite direction, keeping it from sliding.
+
+## Snap to floor
+Snap a bone to floor. Alternatively, select a reference bone and then the bone to move, the bone to move moves down the distance required to snap the reference bone to the floor.
+
 
 ## Steps to make RootMotion work for Game Engines:
 1. Be in Pose mode.
