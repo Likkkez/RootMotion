@@ -514,27 +514,24 @@ class RT_OT_unslide(bpy.types.Operator):
         
 
         #frame 1 matrices
-        f1_bone2_gloc = arm.matrix_world @ bone2.matrix @ mathutils.Vector((0,0,0))
+        f1_bone2_gloc, temp, temp = arm.convert_space(pose_bone=bone2, matrix=bone2.matrix.copy(), from_space='POSE', to_space='WORLD').decompose()
 
         bpy.context.scene.frame_set(bpy.context.scene.frame_current+1)
 
         #frame 2 matrices
-        f2_bone2_gloc = arm.matrix_world @ bone2.matrix @ mathutils.Vector((0,0,0))
+        f2_bone2_gloc, temp, temp = arm.convert_space(pose_bone=bone2, matrix=bone2.matrix.copy(), from_space='POSE', to_space='WORLD').decompose()
 
         #find transform of bone2
         transform = f1_bone2_gloc-f2_bone2_gloc
 
 
         ##apply location to bone1
-        mat1=arm.matrix_world.copy()
-        mat2=bone1.matrix.copy()
-
-        mat1.invert()
-        mat2.invert()
-
-        bone1_gloc = arm.matrix_world @ bone1.matrix @ bone1.location
-        bone1_loc=mat2 @ mat1 @ (bone1_gloc + transform)
-
+        mat_pose=arm.convert_space(pose_bone=bone1, matrix=bone1.matrix.copy(), from_space='POSE', to_space='WORLD')
+        mat_pose=mat_pose + mathutils.Matrix.Translation(transform) 
+        mat_pose=arm.convert_space(pose_bone=bone1, matrix=mat_pose, from_space='WORLD', to_space='LOCAL')
+        
+        
+        bone1_loc, temp, temp = mat_pose.decompose()
 
 
         bone1.location = bone1_loc
@@ -548,49 +545,81 @@ class RT_OT_unslide(bpy.types.Operator):
     
     
 class RT_OT_snap(bpy.types.Operator):
-    bl_description = "Snap a bone to the floor. Can select 2 bones to use one as a reference (Active bone gets snapped, reference bone is used to measure distance to the floor)."
+    bl_description = "Snap a bone to the floor. Can select multiple bones to use as a reference (Active bone gets snapped, reference bones are used to measure distance to the floor)."
     bl_idname = 'rootmotion.snap'
     bl_label = "SnapToFloor"
     bl_options = set({'REGISTER', 'UNDO'}) 
     
+    floor: bpy.props.FloatProperty(
+        name="Floor Z Value",
+        description="",
+        default=0.0
+        )
+    NumIters: bpy.props.IntProperty(
+        name="Number of Iterations",
+        description="Increase this number if you are trying to land IK knees.",
+        default=1,
+        min=1,
+        soft_max=20
+        )
+    key: bpy.props.BoolProperty(
+        name="Insert keyframe",
+        description="Insert a keyframe.",
+        default=False
+        )
+    step: bpy.props.BoolProperty(
+        name="Step Forward",
+        description="Step one frame forward after running.",
+        default=False
+        )
+        
+    @classmethod
+    def poll(cls, context):
+        return context.active_object is not None
+        
     def execute(self, context):
-
         arm = bpy.context.object 
 
 
         bone1=bpy.context.active_pose_bone
-        
-        if len(bpy.context.selected_pose_bones)>1:
-            bone2=bpy.context.selected_pose_bones[1]
-        else:
-            bone2=bone1
+        transform=mathutils.Vector((0,0,0))      
+        for i in range(0,self.NumIters):
+            bpy.context.view_layer.update()
+            
+            bone1_gloc, temp, temp = arm.convert_space(pose_bone=bone1, matrix=bone1.matrix.copy(), from_space='POSE', to_space='WORLD').decompose()
+            
+            #handling multiple bones.
+            for bone in bpy.context.selected_pose_bones:
+                if (len(bpy.context.selected_pose_bones)>1) and (bone==bone1):
+                    continue
+                else:  
+                    bone_gloc, temp, temp = arm.convert_space(pose_bone=bone, matrix=bone.matrix.copy(), from_space='POSE', to_space='WORLD').decompose()
+                    #find we only need the Z axis
 
-        bone2_gloc = arm.matrix_world @ bone2.matrix @ mathutils.Vector((0,0,0))
-        
-
-        #find multiply by 001 to get Z only
-        transform = (bone2_gloc) * mathutils.Vector((0,0,1))
-
-
-        ##apply location to bone1
-        mat1=arm.matrix_world.copy()
-        mat2=bone1.matrix.copy()
-
-        mat1.invert()
-        mat2.invert()
-
-        bone1_gloc = arm.matrix_world @ bone1.matrix @ bone1.location
-        bone1_loc=mat2 @ mat1 @ (bone1_gloc - transform)
-        print(bone1_gloc - transform)
-        print(bone1_loc)
+                    transform = transform - bone_gloc 
+            
+            #calculate offset
+            transform = transform * mathutils.Vector((0,0,1)) / (len(bpy.context.selected_pose_bones) + (len(bpy.context.selected_pose_bones)==1) - 1)
+            transform[2]+=self.floor
+            
+            #apply location to bone1       
+            mat_pose=arm.convert_space(pose_bone=bone1, matrix=bone1.matrix.copy(), from_space='POSE', to_space='WORLD')
+            mat_pose=mat_pose + mathutils.Matrix.Translation(transform) 
+            mat_pose=arm.convert_space(pose_bone=bone1, matrix=mat_pose, from_space='WORLD', to_space='LOCAL')
+            
+            
+            bone1_loc, temp, temp = mat_pose.decompose()
 
 
-        bone1.location = bone1_loc
+            bone1.location = bone1_loc
 
-
-        #bone1 insert keyframe
-        bone1.keyframe_insert(data_path="location")
-        
+            #bone1 insert keyframe
+            if self.key:
+                bone1.keyframe_insert(data_path="location")
+                
+        #step forward.
+        if self.step:
+            bpy.context.scene.frame_set(bpy.context.scene.frame_current+1)
         
         return {'FINISHED'}
 
