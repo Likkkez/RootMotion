@@ -14,10 +14,12 @@ Select the root bone, then run Unroot to transfer motion from root bone to its c
 
 ## Unslide
 Select the sliding bone and click "Unslide" to move the root bone in the opposite direction, keeping it from sliding.
+
 ![](rootmotion3.gif)
 
 ## Snap to floor
 Snap a bone to floor. Alternatively, select a reference bone and then the bone to move, the bone to move moves down the distance required to snap the reference bone to the floor.
+
 ![](rootmotion4.gif)
 
 ## Steps to make RootMotion work for Game Engines:
