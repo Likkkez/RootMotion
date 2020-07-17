@@ -9,7 +9,7 @@ bl_info = {
     "category": "Animation",
 }
 import bpy
-
+import mathutils
 
 def spawn_empty(name):
     empty = bpy.data.objects.new( name, None )
@@ -45,6 +45,7 @@ class RT_OT_rootmotion(bpy.types.Operator):
         up_axis=scene.RT_up_axis
         keep_offset=scene.RT_keep_offset
         rotation_offset=scene.RT_rotation_offset
+        enable_rotation=scene.RT_rotate_root
         limit_location=scene.RT_limit_location
         imprefect_hierarchy=True
 
@@ -79,7 +80,6 @@ class RT_OT_rootmotion(bpy.types.Operator):
         #check if root bone is selected or not
         if foot_list[0].parent:
             constraints_mute=[]
-
             for bone in all_bones:
                 if bone.constraints:
                     for constr in bone.constraints:
@@ -127,11 +127,20 @@ class RT_OT_rootmotion(bpy.types.Operator):
             feet_bone =  arm_rm.pose.bones['feet_bone']
 
 
+            #check if rotation is enabled
+            foot_constraints=['COPY_ROTATION', 'COPY_LOCATION']
+            if not enable_rotation:
+                foot_constraints=['COPY_LOCATION']
+
+
             for idx, foot in enumerate(foot_list):
-                for constr_type in ['COPY_ROTATION', 'COPY_LOCATION']:
+                for constr_type in foot_constraints:
                     constr=feet_bone.constraints.new(constr_type)
                     constr.target=arm
                     constr.subtarget=foot.name
+                    if constr_type=='COPY_ROTATION':
+                        constr.use_y=False
+                        constr.use_x=False
                     if idx!=0:
                         constr.influence=1/len(foot_list)
             #lock to floor
@@ -173,27 +182,17 @@ class RT_OT_rootmotion(bpy.types.Operator):
                 constr.subtarget=''
                 constr.floor_location='FLOOR_Z'
 
-            constr=master_bone_temp.constraints.new('LIMIT_ROTATION')
-            constr.owner_space='LOCAL_WITH_PARENT'
-            if up_axis=='Y':
-                constr.use_limit_x=True
-                constr.use_limit_z=True
-            elif up_axis=='X':
-                constr.use_limit_y=True
-                constr.use_limit_z=True
-            elif up_axis=='Z':
-                constr.use_limit_y=True
-                constr.use_limit_x=True
-
+#            constr=master_bone_temp.constraints.new('LIMIT_ROTATION')
+#            constr.owner_space='LOCAL_WITH_PARENT'
+#            constr.use_limit_x = not up_axis == 'X'
+#            constr.use_limit_y = not up_axis == 'Y'
+#            constr.use_limit_z = not up_axis == 'Z'
+            
             #apply rotation offset to master
             master_bone_temp.rotation_mode='XYZ'
-            if up_axis=='X':
-                rotation_offset_vector=(rotation_offset,0,0)
-            elif up_axis=='Y':
-                rotation_offset_vector=(0,rotation_offset,0)
-            elif up_axis=='Z':
-                rotation_offset_vector=(0,0,rotation_offset)
-            master_bone_temp.rotation_euler=rotation_offset_vector
+            master_bone_temp.rotation_euler=((rotation_offset*(up_axis=='X')),
+                                            (rotation_offset*(up_axis=='Y')),
+                                            (rotation_offset*(up_axis=='Z')))
 
 
 
@@ -229,15 +228,15 @@ class RT_OT_rootmotion(bpy.types.Operator):
             bpy.ops.nla.bake(frame_start=bpy.context.scene.frame_start, frame_end=bpy.context.scene.frame_end, only_selected=True, visual_keying=True, clear_constraints=False, use_current_action=True, bake_types={'POSE'})
 
 
-
             #delete copy transforms constraints and unmute others
+            i=0
             for idx,bone in enumerate(all_bones):
                 if bone.constraints:
                     bone.constraints.remove(copy_transforms_constraints[idx])
                     if bone.constraints:
                         for constr in bone.constraints:
-                            constr.mute=constraints_mute[idx]
-                        
+                            constr.mute=constraints_mute[i]
+                            i+=1
                         
 
 
@@ -323,9 +322,12 @@ class RT_OT_rootmotion(bpy.types.Operator):
             bpy.ops.nla.bake(frame_start=bpy.context.scene.frame_start, frame_end=bpy.context.scene.frame_end, only_selected=True, visual_keying=True, clear_constraints=False, use_current_action=True, bake_types={'POSE'})
             
             master_bone.constraints.remove(constr_master_transforms)
+                        
             if master_bone.constraints:
+                i=0
                 for idx, constr in enumerate(master_bone.constraints):
-                    constr.mute=constraints_mute[idx]
+                    constr.mute=constraints_mute[i]
+                    i+=1
 
             #delete empty
             if empty_ct.animation_data:
@@ -347,6 +349,253 @@ class RT_OT_rootmotion(bpy.types.Operator):
         
         return {'FINISHED'}
 
+
+
+class RT_OT_unroot(bpy.types.Operator):
+    bl_description = "Select the Root bone and then run. This transfers motion from root to it's children"
+    bl_idname = 'rootmotion.unroot'
+    bl_label = "UnRoot"
+    bl_options = set({'REGISTER', 'UNDO'}) 
+    
+    def execute(self, context):
+        scene=bpy.context.scene
+        
+        imprefect_hierarchy=True
+
+        arm=bpy.context.selected_editable_objects[0]
+
+        master_bone=bpy.context.active_pose_bone
+        children=[]
+        for bone in master_bone.children:
+            children.append(bone)
+        if imprefect_hierarchy:
+            for bone in arm.pose.bones:
+                if (not bone.parent) and (bone!=master_bone):
+                    for pbone in bone.children:
+                        children.append(pbone)
+
+        all_bones=children.copy()
+        all_bones.append(master_bone)
+
+        bpy.context.scene.frame_set(bpy.context.scene.frame_start)
+
+        #save armature layers
+        arm_layers=[]
+        for layer in arm.data.layers:
+            arm_layers.append(layer)
+            
+            
+            
+        arm.data.pose_position='REST'
+
+        #check if root bone is selected or not
+        constraints_mute=[]
+        for bone in all_bones:
+            if bone.constraints:
+                for constr in bone.constraints:
+                    constraints_mute.append(constr.mute)
+                    constr.mute=True
+
+        #create armature
+        bpy.ops.object.mode_set(mode='OBJECT')
+
+        arm_rm=spawn_armature('Rootmotion',(0,0,0))
+        arm_rm.matrix_world=arm.matrix_world
+
+
+        bpy.ops.object.select_all(action='DESELECT')
+        arm_rm.select_set(True)
+        bpy.context.view_layer.objects.active=arm_rm
+        bpy.ops.object.mode_set(mode='EDIT')
+
+
+        for bone in all_bones:
+            edit_bone=arm_rm.data.edit_bones.new(bone.name)
+            edit_bone.tail=(0,0,5)
+            edit_bone.head=(0,0,0)
+
+        bpy.ops.object.mode_set(mode='POSE')
+        for bone in arm_rm.pose.bones:
+            try:
+                arm.pose.bones[bone.name]
+                if bone.name!=master_bone.name:
+                    constr=bone.constraints.new('COPY_TRANSFORMS')
+                    constr.target=arm
+                    constr.subtarget=bone.name
+            except:
+                pass
+
+
+
+
+        #apply pose    
+        bpy.ops.pose.armature_apply(selected=False)
+
+
+
+        arm.data.pose_position='POSE'
+        
+        
+        #bake action for arm_rm
+        bpy.ops.nla.bake(frame_start=bpy.context.scene.frame_start, frame_end=bpy.context.scene.frame_end, only_selected=False, visual_keying=True, clear_constraints=True, bake_types={'POSE'})
+
+
+
+
+        #add constraints to required bones
+        bpy.ops.object.mode_set(mode='OBJECT')
+        bpy.ops.object.select_all(action='DESELECT')
+        arm.select_set(True)
+        bpy.context.view_layer.objects.active=arm
+
+        bpy.ops.object.mode_set(mode='POSE')
+        bpy.ops.armature.layers_show_all()
+        bpy.ops.pose.select_all(action='DESELECT')
+        
+        copy_transforms_constraints=[]
+        for bone in all_bones:
+            bone.bone.select=True
+            constr=bone.constraints.new('COPY_TRANSFORMS')
+            constr.target=arm_rm
+            constr.subtarget=bone.name
+            copy_transforms_constraints.append(constr)
+
+            
+            
+            
+        #bake action for armature
+        bpy.ops.nla.bake(frame_start=bpy.context.scene.frame_start, frame_end=bpy.context.scene.frame_end, only_selected=True, visual_keying=True, clear_constraints=False, use_current_action=True, bake_types={'POSE'})
+
+
+        #delete copy transforms constraints and unmute others
+        i=0
+        for idx,bone in enumerate(all_bones):
+            if bone.constraints:
+                bone.constraints.remove(copy_transforms_constraints[idx])
+                if bone.constraints:
+                    for constr in bone.constraints:
+                        constr.mute=constraints_mute[i]
+                        i+=1
+                        
+        
+        #delete temp armature
+        if arm_rm.animation_data:
+            bpy.data.actions.remove(arm_rm.animation_data.action)
+        arm_rm_arm=arm_rm.data
+        bpy.data.objects.remove(arm_rm)
+        bpy.data.armatures.remove(arm_rm_arm)
+
+
+
+        #restore layers on armature
+        for idx,layer in enumerate(arm_layers):
+            arm.data.layers[idx]=layer
+        
+        return {'FINISHED'}
+
+
+
+
+class RT_OT_unslide(bpy.types.Operator):
+    bl_description = "Selected a bone touching the floor. The operator moves the root to make the bone stable."
+    bl_idname = 'rootmotion.unslide'
+    bl_label = "UnSlide"
+    bl_options = set({'REGISTER', 'UNDO'}) 
+    
+    def execute(self, context):
+
+        arm = bpy.context.object 
+
+        bone1=get_master(bpy.context.active_pose_bone)
+        bone2=bpy.context.active_pose_bone
+
+        #bone1 insert keyframe
+        bone1.keyframe_insert(data_path="location")
+        
+
+        #frame 1 matrices
+        f1_bone2_gloc = arm.matrix_world @ bone2.matrix @ mathutils.Vector((0,0,0))
+
+        bpy.context.scene.frame_set(bpy.context.scene.frame_current+1)
+
+        #frame 2 matrices
+        f2_bone2_gloc = arm.matrix_world @ bone2.matrix @ mathutils.Vector((0,0,0))
+
+        #find transform of bone2
+        transform = f1_bone2_gloc-f2_bone2_gloc
+
+
+        ##apply location to bone1
+        mat1=arm.matrix_world.copy()
+        mat2=bone1.matrix.copy()
+
+        mat1.invert()
+        mat2.invert()
+
+        bone1_gloc = arm.matrix_world @ bone1.matrix @ bone1.location
+        bone1_loc=mat2 @ mat1 @ (bone1_gloc + transform)
+
+
+
+        bone1.location = bone1_loc
+
+
+        #bone1 insert keyframe
+        bone1.keyframe_insert(data_path="location")
+        
+        
+        return {'FINISHED'}
+    
+    
+class RT_OT_snap(bpy.types.Operator):
+    bl_description = "Snap a bone to the floor. Can select 2 bones to use one as a reference (Active bone gets snapped, reference bone is used to measure distance to the floor)."
+    bl_idname = 'rootmotion.snap'
+    bl_label = "SnapToFloor"
+    bl_options = set({'REGISTER', 'UNDO'}) 
+    
+    def execute(self, context):
+
+        arm = bpy.context.object 
+
+
+        bone1=bpy.context.active_pose_bone
+        
+        if len(bpy.context.selected_pose_bones)>1:
+            bone2=bpy.context.selected_pose_bones[1]
+        else:
+            bone2=bone1
+
+        bone2_gloc = arm.matrix_world @ bone2.matrix @ mathutils.Vector((0,0,0))
+        
+
+        #find multiply by 001 to get Z only
+        transform = (bone2_gloc) * mathutils.Vector((0,0,1))
+
+
+        ##apply location to bone1
+        mat1=arm.matrix_world.copy()
+        mat2=bone1.matrix.copy()
+
+        mat1.invert()
+        mat2.invert()
+
+        bone1_gloc = arm.matrix_world @ bone1.matrix @ bone1.location
+        bone1_loc=mat2 @ mat1 @ (bone1_gloc - transform)
+        print(bone1_gloc - transform)
+        print(bone1_loc)
+
+
+        bone1.location = bone1_loc
+
+
+        #bone1 insert keyframe
+        bone1.keyframe_insert(data_path="location")
+        
+        
+        return {'FINISHED'}
+
+
+    
     
 class RT_PT_rootmotion(bpy.types.Panel):
     bl_category = "RootMotion"
@@ -369,15 +618,26 @@ class RT_PT_rootmotion(bpy.types.Panel):
         
         col.prop(scene, "RT_up_axis")
         col.prop(scene, "RT_rotation_offset")
+        col.prop(scene, "RT_rotate_root")
         
         row = col.row()
         row.prop(scene, "RT_keep_offset")
         row.prop(scene, "RT_limit_location")
-        layout.operator('rootmotion.rootmotion', text="RootMotion")
+        col.operator('rootmotion.rootmotion', text="RootMotion")
         
+        #tools
+        box = layout.box()
+        box.label(text="Tools")
+        col = box.column(align = True)
+        col.operator('rootmotion.unroot', text="UnRoot")
+        col.operator('rootmotion.unslide', text="UnSlide")
+        col.operator('rootmotion.snap', text="Snap to Floor")
 
 classes = (
     RT_OT_rootmotion,
+    RT_OT_unroot,
+    RT_OT_unslide,
+    RT_OT_snap,
     RT_PT_rootmotion
     )
 
@@ -401,6 +661,11 @@ def register():
     bpy.types.Scene.RT_limit_location = bpy.props.BoolProperty(
         name="Snap to Floor",
         description="Snap root to floor. Uses armature object's location as floor",
+        default=True
+        )
+    bpy.types.Scene.RT_rotate_root = bpy.props.BoolProperty(
+        name="Rotate Root",
+        description="Rotate root bone to face forward. Disable for only root location.",
         default=True
         )
     bpy.types.Scene.RT_rotation_offset = bpy.props.FloatProperty(
