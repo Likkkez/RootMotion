@@ -579,29 +579,26 @@ class RT_OT_snap(bpy.types.Operator):
         
     def execute(self, context):
         arm = bpy.context.object 
-
-
+        num_refbones=len(bpy.context.selected_pose_bones)-1
         bone1=bpy.context.active_pose_bone
-        transform=mathutils.Vector((0,0,0))      
+          
         for i in range(0,self.NumIters):
             bpy.context.view_layer.update()
-            
+            transform=mathutils.Vector((0,0,0))    
             bone1_gloc, temp, temp = arm.convert_space(pose_bone=bone1, matrix=bone1.matrix.copy(), from_space='POSE', to_space='WORLD').decompose()
             
             #handling multiple bones.
             for bone in bpy.context.selected_pose_bones:
-                if (len(bpy.context.selected_pose_bones)>1) and (bone==bone1):
+                if (num_refbones!=0) and (bone==bone1):
                     continue
                 else:  
                     bone_gloc, temp, temp = arm.convert_space(pose_bone=bone, matrix=bone.matrix.copy(), from_space='POSE', to_space='WORLD').decompose()
-                    #find we only need the Z axis
-
+                    
                     transform = transform - bone_gloc 
             
             #calculate offset
-            transform = transform * mathutils.Vector((0,0,1)) / (len(bpy.context.selected_pose_bones) + (len(bpy.context.selected_pose_bones)==1) - 1)
-            transform[2]+=self.floor
-            
+            #transform = (transform * mathutils.Vector((0,0,1))/(self.NumIters))/ (num_refbones + (num_refbones==0))
+            transform = (transform * mathutils.Vector((0,0,1)) + mathutils.Vector((0,0,self.floor)))/ (num_refbones + (num_refbones==0))
             #apply location to bone1       
             mat_pose=arm.convert_space(pose_bone=bone1, matrix=bone1.matrix.copy(), from_space='POSE', to_space='WORLD')
             mat_pose=mat_pose + mathutils.Matrix.Translation(transform) 
