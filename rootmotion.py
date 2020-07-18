@@ -10,6 +10,7 @@ bl_info = {
 }
 import bpy
 import mathutils
+import math
 
 def spawn_empty(name):
     empty = bpy.data.objects.new( name, None )
@@ -548,13 +549,39 @@ class RT_OT_snap(bpy.types.Operator):
     bl_description = "Snap a bone to the floor. Can select multiple bones to use as a reference (Active bone gets snapped, reference bones are used to measure distance to the floor)."
     bl_idname = 'rootmotion.snap'
     bl_label = "SnapToFloor"
-    bl_options = set({'REGISTER', 'UNDO'}) 
+    bl_options = set({'REGISTER', 'UNDO'})
     
-    floor: bpy.props.FloatProperty(
+    
+    SourceAxis: bpy.props.EnumProperty(
+        items =[("0", "X", ""),
+                ("1", "Y", ""),
+                ("2", "Z", "")],
+        default='2',
+        name = "Source Axis",
+        description="Axis to use for calculating distance."
+        )
+        
+    TargetAxis: bpy.props.EnumProperty(
+        items =[("0", "X", ""),
+                ("1", "Y", ""),
+                ("2", "Z", "")],
+        default='2',
+        name = "Target Axis",
+        description="Axis to use for applying calculated distance."
+        )
+        
+    Invert: bpy.props.BoolProperty(
+        name="Invert Target",
+        description="Invert target axis",
+        default=False
+        )
+    
+    Floor: bpy.props.FloatProperty(
         name="Floor Z Value",
         description="",
         default=0.0
         )
+        
     NumIters: bpy.props.IntProperty(
         name="Number of Iterations",
         description="Increase this number if you are trying to land IK knees.",
@@ -562,14 +589,18 @@ class RT_OT_snap(bpy.types.Operator):
         min=1,
         soft_max=20
         )
-    key: bpy.props.BoolProperty(
-        name="Insert keyframe",
-        description="Insert a keyframe.",
-        default=False
+        
+    IterInfluence: bpy.props.FloatProperty(
+        name="Influence of an iteration.",
+        description="Can increase accuracy when remapping between different axis. (If iterations are set to 1 do not change this value.)",
+        default=1.0,
+        min=0.0,
+        max=1.0
         )
-    step: bpy.props.BoolProperty(
-        name="Step Forward",
-        description="Step one frame forward after running.",
+        
+    Step: bpy.props.BoolProperty(
+        name="Step Forward and Key",
+        description="Step one frame forward after running and insert a keyframe.",
         default=False
         )
         
@@ -585,7 +616,7 @@ class RT_OT_snap(bpy.types.Operator):
         for i in range(0,self.NumIters):
             bpy.context.view_layer.update()
             transform=mathutils.Vector((0,0,0))    
-            bone1_gloc, temp, temp = arm.convert_space(pose_bone=bone1, matrix=bone1.matrix.copy(), from_space='POSE', to_space='WORLD').decompose()
+#            bone1_gloc, temp, temp = arm.convert_space(pose_bone=bone1, matrix=bone1.matrix.copy(), from_space='POSE', to_space='WORLD').decompose()
             
             #handling multiple bones.
             for bone in bpy.context.selected_pose_bones:
@@ -594,14 +625,21 @@ class RT_OT_snap(bpy.types.Operator):
                 else:  
                     bone_gloc, temp, temp = arm.convert_space(pose_bone=bone, matrix=bone.matrix.copy(), from_space='POSE', to_space='WORLD').decompose()
                     
-                    transform = transform - bone_gloc 
+                    transform = (transform - bone_gloc) * self.IterInfluence
             
             #calculate offset
-            #transform = (transform * mathutils.Vector((0,0,1))/(self.NumIters))/ (num_refbones + (num_refbones==0))
-            transform = (transform * mathutils.Vector((0,0,1)) + mathutils.Vector((0,0,self.floor)))/ (num_refbones + (num_refbones==0))
+            transform = (transform * mathutils.Vector((self.SourceAxis=='0',self.SourceAxis=='1',self.SourceAxis=='2')) + mathutils.Vector((0,0,self.Floor)))/ (num_refbones + (num_refbones==0))
+            
+            #move to other axis
+            print(transform)
+            transform_value= (-transform[int(self.SourceAxis)]*self.Invert) + ((not self.Invert) * transform[int(self.SourceAxis)])
+            transform=mathutils.Vector((0,0,0))
+            transform[int(self.TargetAxis)]=transform_value
+
+            
             #apply location to bone1       
             mat_pose=arm.convert_space(pose_bone=bone1, matrix=bone1.matrix.copy(), from_space='POSE', to_space='WORLD')
-            mat_pose=mat_pose + mathutils.Matrix.Translation(transform) 
+            mat_pose=mat_pose + mathutils.Matrix.Translation(transform)
             mat_pose=arm.convert_space(pose_bone=bone1, matrix=mat_pose, from_space='WORLD', to_space='LOCAL')
             
             
@@ -611,11 +649,11 @@ class RT_OT_snap(bpy.types.Operator):
             bone1.location = bone1_loc
 
             #bone1 insert keyframe
-            if self.key:
+            if self.Step:
                 bone1.keyframe_insert(data_path="location")
                 
         #step forward.
-        if self.step:
+        if self.Step:
             bpy.context.scene.frame_set(bpy.context.scene.frame_current+1)
         
         return {'FINISHED'}
