@@ -625,7 +625,7 @@ class RT_OT_snap(bpy.types.Operator):
                 else:  
                     bone_gloc, temp, temp = arm.convert_space(pose_bone=bone, matrix=bone.matrix.copy(), from_space='POSE', to_space='WORLD').decompose()
                     
-                    transform = ((transform - bone_gloc) + mathutils.Vector((0,0,self.Floor))) * self.IterInfluence
+                    transform = ((transform - bone_gloc) + mathutils.Vector(((self.SourceAxis=='0') * self.Floor,(self.SourceAxis=='1') * self.Floor,(self.SourceAxis=='2') * self.Floor))) * self.IterInfluence
             
             #calculate offset
             transform = (transform * mathutils.Vector((self.SourceAxis=='0',self.SourceAxis=='1',self.SourceAxis=='2')))/ (num_refbones + (num_refbones==0))
