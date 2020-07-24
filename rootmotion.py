@@ -498,7 +498,7 @@ class RT_OT_unroot(bpy.types.Operator):
 
 
 class RT_OT_unslide(bpy.types.Operator):
-    bl_description = "Selected a bone touching the floor. The operator moves the root to make the bone stable."
+    bl_description = "Selected a bone touching the floor, then select the bone to move (has to be parent of the bone). The operator moves the parent to make the bone stable."
     bl_idname = 'rootmotion.unslide'
     bl_label = "UnSlide"
     bl_options = set({'REGISTER', 'UNDO'}) 
@@ -507,8 +507,9 @@ class RT_OT_unslide(bpy.types.Operator):
 
         arm = bpy.context.object 
 
-        bone1=get_master(bpy.context.active_pose_bone)
-        bone2=bpy.context.active_pose_bone
+#        bone1=get_master(bpy.context.active_pose_bone)
+        bone1=bpy.context.active_pose_bone
+        bone2=bpy.context.selected_pose_bones[1]
 
         #bone1 insert keyframe
         bone1.keyframe_insert(data_path="location")
