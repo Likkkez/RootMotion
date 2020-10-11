@@ -503,6 +503,22 @@ class RT_OT_unslide(bpy.types.Operator):
     bl_label = "UnSlide"
     bl_options = set({'REGISTER', 'UNDO'}) 
     
+    Limit_X: bpy.props.BoolProperty(
+        name="Limit X",
+        description="Don't move along X axis",
+        default=False
+        )
+    Limit_Y: bpy.props.BoolProperty(
+        name="Limit Y",
+        description="Don't move along Y axis",
+        default=False
+        )
+    Limit_Z: bpy.props.BoolProperty(
+        name="Limit Z",
+        description="Don't move along Z axis",
+        default=False
+        )
+    
     def execute(self, context):
 
         arm = bpy.context.object 
@@ -516,24 +532,24 @@ class RT_OT_unslide(bpy.types.Operator):
         
 
         #frame 1 matrices
-        f1_bone2_gloc, temp, temp = arm.convert_space(pose_bone=bone2, matrix=bone2.matrix.copy(), from_space='POSE', to_space='WORLD').decompose()
+        f1_bone2_gloc = arm.convert_space(pose_bone=bone2, matrix=bone2.matrix.copy(), from_space='POSE', to_space='WORLD').decompose()[0]
 
         bpy.context.scene.frame_set(bpy.context.scene.frame_current+1)
 
         #frame 2 matrices
-        f2_bone2_gloc, temp, temp = arm.convert_space(pose_bone=bone2, matrix=bone2.matrix.copy(), from_space='POSE', to_space='WORLD').decompose()
+        f2_bone2_gloc = arm.convert_space(pose_bone=bone2, matrix=bone2.matrix.copy(), from_space='POSE', to_space='WORLD').decompose()[0]
 
         #find transform of bone2
-        transform = f1_bone2_gloc-f2_bone2_gloc
-
-
+        limit = mathutils.Vector((not self.Limit_X,not self.Limit_Y,not self.Limit_Z))
+        transform = (f1_bone2_gloc-f2_bone2_gloc)*limit
+        
         ##apply location to bone1
         mat_pose=arm.convert_space(pose_bone=bone1, matrix=bone1.matrix.copy(), from_space='POSE', to_space='WORLD')
         mat_pose=mat_pose + mathutils.Matrix.Translation(transform) 
         mat_pose=arm.convert_space(pose_bone=bone1, matrix=mat_pose, from_space='WORLD', to_space='LOCAL')
         
         
-        bone1_loc, temp, temp = mat_pose.decompose()
+        bone1_loc = mat_pose.decompose()[0]
 
 
         bone1.location = bone1_loc
