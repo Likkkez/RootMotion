@@ -718,6 +718,12 @@ class RT_OT_unslide(bpy.types.Operator):
         description="Don't move along Z axis",
         default=False
         )
+
+    CursorTarget: bpy.props.BoolProperty(
+        name="Use Cursor",
+        description="Use Cursor as reference point.",
+        default=False
+        )
     
     def execute(self, context):
 
@@ -730,7 +736,7 @@ class RT_OT_unslide(bpy.types.Operator):
         
         #check if root is also selected
         for bone in bpy.context.selected_pose_bones:
-            if bone == targetbone:
+            if (bone == targetbone) and not self.CursorTarget:
                 targetbone.bone.select=False
                 break
         
@@ -747,24 +753,44 @@ class RT_OT_unslide(bpy.types.Operator):
 
             #targetbone insert keyframe
             targetbone.keyframe_insert(data_path="location")
-
-            #frame 1 matrices
-            f1_bone2_gloc = mathutils.Vector((0,0,0))
-            for bone in bpy.context.selected_pose_bones:
-                arm = bone.id_data
-                f1_bone2_gloc += arm.convert_space(pose_bone=bone, matrix=bone.matrix.copy(), from_space='POSE', to_space='WORLD').decompose()[0] / numbones
-
-            bpy.context.scene.frame_set(bpy.context.scene.frame_current+direction)
-
-            #frame 2 matrices
-            f2_bone2_gloc = mathutils.Vector((0,0,0))
-            for bone in bpy.context.selected_pose_bones:
-                arm = bone.id_data
-                f2_bone2_gloc += arm.convert_space(pose_bone=bone, matrix=bone.matrix.copy(), from_space='POSE', to_space='WORLD').decompose()[0] / numbones
-
-            #find transform of bone2
             limit = mathutils.Vector((not self.Limit_X,not self.Limit_Y,not self.Limit_Z))
-            transform = (f1_bone2_gloc-f2_bone2_gloc)*limit
+
+            if not self.CursorTarget:
+                #frame 1 matrices
+                f1_bone2_gloc = mathutils.Vector((0,0,0))
+                for bone in bpy.context.selected_pose_bones:
+                    arm = bone.id_data
+                    f1_bone2_gloc += arm.convert_space(pose_bone=bone, matrix=bone.matrix.copy(), from_space='POSE', to_space='WORLD').decompose()[0] / numbones
+
+                bpy.context.scene.frame_set(bpy.context.scene.frame_current+direction)
+
+                #frame 2 matrices
+                f2_bone2_gloc = mathutils.Vector((0,0,0))
+                for bone in bpy.context.selected_pose_bones:
+                    arm = bone.id_data
+                    f2_bone2_gloc += arm.convert_space(pose_bone=bone, matrix=bone.matrix.copy(), from_space='POSE', to_space='WORLD').decompose()[0] / numbones
+
+                transform = (f1_bone2_gloc-f2_bone2_gloc)*limit
+            else: # cursorsnap
+                arm = targetbone.id_data
+                
+                if bpy.context.active_pose_bone:
+                    bone = bpy.context.active_pose_bone
+                else:
+                    bone = targetbone
+
+                mat_f1 = arm.convert_space(pose_bone=bone, matrix=bone.matrix.copy(), from_space='POSE', to_space='WORLD').copy()
+
+                bpy.context.scene.frame_set(bpy.context.scene.frame_current+direction)
+
+                mat_f2 = arm.convert_space(pose_bone=bone, matrix=bone.matrix.copy(), from_space='POSE', to_space='WORLD').copy()
+
+                cursor_matrix = mathutils.Matrix.Translation(context.scene.cursor.location.copy())
+                transform = cursor_matrix.decompose()[0] - ((mat_f2 @ mat_f1.inverted()) @ cursor_matrix).decompose()[0] * limit
+
+
+
+
             
             ##apply location to targetbone
             arm = targetbone.id_data
@@ -775,9 +801,7 @@ class RT_OT_unslide(bpy.types.Operator):
             
             targetbone_loc = mat_pose.decompose()[0]
 
-
             targetbone.location = targetbone_loc
-
 
             #targetbone insert keyframe
             targetbone.keyframe_insert(data_path="location")
@@ -785,13 +809,46 @@ class RT_OT_unslide(bpy.types.Operator):
         
         return {'FINISHED'}
 
+
+def anim_inverse(bone):
+    matrix_con = bone.matrix.copy()
+
+    c_found = False
+    c_enabled_list = []
+    for con in bone.constraints:
+        if (con.type == "CHILD_OF" or (self.ArmConstr and con.type == "ARMATURE")) and con.enabled == True:
+            c_found = True
+            con.enabled = False
+            c_enabled_list.append(con.name)
+
+    bone.id_data.update_tag()
+    bpy.context.view_layer.update()
+
+    matrix_nocon = bone.matrix.copy()
+
+    offset = matrix_nocon.inverted() @ matrix_con
+    bone.matrix = matrix_nocon @ offset.inverted()
+
+
+    for cn in c_enabled_list:
+        con = bone.constraints.get(cn)
+        if con:
+            con.enabled = True
+
+    key_insert(bone)
+
 class RT_OT_TempParent(bpy.types.Operator):
     bl_description = "Follow selected bone like a parent."
     bl_idname = 'rootmotion.tempparent'
     bl_label = "TempParent"
     bl_options = set({'REGISTER', 'UNDO'}) 
     
-    
+    AnimInverse: bpy.props.BoolProperty(
+        name="Fix ChildOf/Armature constraints",
+        default=False
+        )
+
+
     def execute(self, context):
 
 
@@ -832,6 +889,9 @@ class RT_OT_TempParent(bpy.types.Operator):
 
             # #targetbone insert keyframe
             key_insert(targetbone)
+
+            if (self.AnimInverse):
+                anim_inverse(targetbone)
         
         
         return {'FINISHED'}
@@ -1203,8 +1263,12 @@ class RT_PT_rootmotion_tools(bpy.types.Panel):
                 
         box3 = box.box()        
         box3.prop(scene, "RT_step_size")
-        box3.operator('rootmotion.unslide', text="UnSlide")
-        box3.operator('rootmotion.tempparent')
+        box3.operator('rootmotion.unslide', text="UnSlide").CursorTarget = False
+        box3.operator('rootmotion.unslide', text="UnSlide Cursor").CursorTarget = True
+
+        row = box3.row()
+        row.operator('rootmotion.tempparent').AnimInverse = False
+        row.operator('rootmotion.tempparent', text="TempParent ChildOf/Armature").AnimInverse = True
         # box3.operator('rootmotion.rotalign', text="RotAlign")
         box3.operator('rootmotion.continue', text="Continue")
         box3.operator('rootmotion.snap', text="Snap to Floor")
@@ -1266,7 +1330,6 @@ class RT_OT_GR_stabilize(bpy.types.Operator):
                 key_range = range(0, len(fcurve.keyframe_points))
                 if self.backwards:
                     key_range = reversed(key_range)
-
                 for i in key_range:
                     p = fcurve.keyframe_points[i]
                     if p.select_control_point:
@@ -1293,9 +1356,9 @@ class RT_OT_GR_stabilize(bpy.types.Operator):
 
 
 class RT_OT_GR_invertquats(bpy.types.Operator):
-    bl_description = "Invert Quats on selected bones throughout the whole length of the animation."
+    bl_description = "Flip Quats on selected bones on selected keyframes."
     bl_idname = 'rootmotion.gr_invertquats'
-    bl_label = "Invert Quats Whole Anim"
+    bl_label = "Flip Quaternions on selected keyframes"
     bl_options = set({'REGISTER', 'UNDO'}) 
 
     def execute(self, context):   
@@ -1305,7 +1368,10 @@ class RT_OT_GR_invertquats(bpy.types.Operator):
             if valid_curve(context, obj, fcurve, internal_valid = True):
                 if fcurve.data_path.endswith("rotation_quaternion"):
                     for p in fcurve.keyframe_points:
-                        p.co.y *= -1.0
+                        if p.select_control_point:
+                            p.co.y *= -1.0
+                            p.handle_right.y *= -1.0
+                            p.handle_left.y *= -1.0
 
         return {'FINISHED'}
 
